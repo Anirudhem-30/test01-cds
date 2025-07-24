@@ -1,0 +1,67 @@
+# .cds/environments/production.yml
+
+name: production
+description: Production environment for EKS cluster
+
+# Environment variables
+variables:
+  - name: AWS_REGION
+    value: "us-east-1"
+    type: string
+  - name: EKS_CLUSTER_NAME
+    value: "eks-cluster-production"
+    type: string
+  - name: NAMESPACE
+    value: "production"
+    type: string
+  - name: REPLICA_COUNT
+    value: "5"
+    type: string
+  - name: RESOURCE_LIMITS_CPU
+    value: "500m"
+    type: string
+  - name: RESOURCE_LIMITS_MEMORY
+    value: "512Mi"
+    type: string
+  - name: ENABLE_AUTOSCALING
+    value: "true"
+    type: string
+  - name: MIN_REPLICAS
+    value: "3"
+    type: string
+  - name: MAX_REPLICAS
+    value: "10"
+    type: string
+
+# Production secrets
+secrets:
+  - name: AWS_ACCESS_KEY_ID
+    value: "encrypted:production-aws-access-key"
+  - name: AWS_SECRET_ACCESS_KEY
+    value: "encrypted:production-aws-secret-key"
+  - name: SLACK_WEBHOOK_URL
+    value: "encrypted:slack-webhook-production"
+  - name: GRAFANA_ADMIN_PASSWORD
+    value: "encrypted:grafana-production-password"
+  - name: DATABASE_URL
+    value: "encrypted:production-database-url"
+  - name: REDIS_PASSWORD
+    value: "encrypted:production-redis-password"
+
+# Strict production permissions
+permissions:
+  - permission: read
+    users: ["developer-team", "qa-team", "management"]
+  - permission: execute
+    users: ["devops-team", "senior-devops"]
+  - permission: admin
+    users: ["admin", "principal-devops"]
+
+# Production deployment keys
+keys:
+  - name: production-deployment-key
+    type: ssh
+    value: "encrypted:production-deployment-ssh-key"
+  - name: production-signing-key
+    type: pgp
+    value: "encrypted:production-pgp-signing-key"

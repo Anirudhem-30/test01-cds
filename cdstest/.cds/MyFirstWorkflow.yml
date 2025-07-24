@@ -1,0 +1,2 @@
+name: MyFirstWorkflow
+from: shared.infra/demo-workflow-hello-world@1

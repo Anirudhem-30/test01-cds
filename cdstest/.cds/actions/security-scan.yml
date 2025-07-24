@@ -1,0 +1,66 @@
+name: security-scan
+description: Custom action to perform security scans
+author: Security Team
+version: "1.0.0"
+
+parameters:
+  - name: scan_type
+    description: "Type of security scan"
+    type: choice
+    default: "all"
+    values: ["all", "terraform", "container", "kubernetes"]
+  - name: severity_threshold
+    description: "Minimum severity to report"
+    type: choice
+    default: "MEDIUM"
+    values: ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+  - name: fail_on_critical
+    description: "Fail pipeline on critical vulnerabilities"
+    type: boolean
+    default: true
+
+requirements:
+  - model: linux
+    os: ubuntu
+    memory: 2048
+
+steps:
+  - name: install-security-tools
+    script: |
+      #!/bin/bash
+      set -e
+      sudo apt-get update
+      sudo apt-get install wget apt-transport-https gnupg lsb-release -y
+      wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+      echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+      sudo apt-get update && sudo apt-get install trivy -y
+      pip3 install checkov
+      wget -O hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
+      chmod +x hadolint && sudo mv hadolint /usr/local/bin/
+
+  - name: terraform-security-scan
+    script: |
+      #!/bin/bash
+      set -e
+      if [ "{{.scan_type}}" = "all" ] || [ "{{.scan_type}}" = "terraform" ]; then
+        checkov -d . --framework terraform --output cli
+        trivy config .
+      fi
+
+  - name: container-security-scan
+    script: |
+      #!/bin/bash
+      set -e
+      if [ "{{.scan_type}}" = "all" ] || [ "{{.scan_type}}" = "container" ]; then
+        find . -name "Dockerfile*" -exec hadolint {} \;
+        trivy fs .
+      fi
+
+  - name: kubernetes-security-scan
+    script: |
+      #!/bin/bash
+      set -e
+      if [ "{{.scan_type}}" = "all" ] || [ "{{.scan_type}}" = "kubernetes" ]; then
+        trivy config deployment.yml
+        checkov -f deployment.yml --framework kubernetes
+      fi

@@ -1,0 +1,67 @@
+name: backup-restore
+description: Custom action for backup and restore operations
+author: Platform Team
+version: "1.0.0"
+
+parameters:
+  - name: operation
+    description: "Backup or restore operation"
+    type: choice
+    default: "backup"
+    values: ["backup", "restore", "list", "test"]
+  - name: backup_name
+    description: "Name of the backup"
+    type: string
+    default: ""
+  - name: namespace
+    description: "Namespace to backup/restore"
+    type: string
+    default: "default"
+  - name: retention
+    description: "Backup retention period"
+    type: string
+    default: "720h"
+
+requirements:
+  - model: linux
+    os: ubuntu
+    memory: 1024
+
+steps:
+  - name: install-velero
+    script: |
+      #!/bin/bash
+      set -e
+      VELERO_VERSION="v1.11.1"
+      wget https://github.com/vmware-tanzu/velero/releases/download/$VELERO_VERSION/velero-$VELERO_VERSION-linux-amd64.tar.gz
+      tar -xzf velero-$VELERO_VERSION-linux-amd64.tar.gz
+      sudo mv velero-$VELERO_VERSION-linux-amd64/velero /usr/local/bin/
+      velero version --client-only
+
+  - name: execute-operation
+    script: |
+      #!/bin/bash
+      set -e
+      OP="{{.operation}}"
+      NAME="{{.backup_name}}"
+      NS="{{.namespace}}"
+      RET="{{.retention}}"
+
+      if [ "$OP" = "backup" ]; then
+        [ -z "$NAME" ] && NAME="backup-$(date +%Y%m%d-%H%M%S)"
+        velero backup create $NAME --include-namespaces $NS --ttl $RET
+        velero backup wait $NAME
+      elif [ "$OP" = "restore" ]; then
+        [ -z "$NAME" ] && { echo "Backup name required for restore"; exit 1; }
+        velero restore create --from-backup $NAME
+      elif [ "$OP" = "list" ]; then
+        velero backup get
+      elif [ "$OP" = "test" ]; then
+        echo "Running test backup/restore cycle..."
+        kubectl create namespace test-ns || true
+        kubectl create configmap test-config --from-literal=key=value -n test-ns
+        TEST_BACKUP="test-backup-$(date +%Y%m%d-%H%M%S)"
+        velero backup create $TEST_BACKUP --include-namespaces test-ns
+        kubectl delete namespace test-ns
+        velero restore create --from-backup $TEST_BACKUP
+      fi

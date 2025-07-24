@@ -1,0 +1,166 @@
+# OVH CDS Hooks and Integrations
+# .cds/hooks/github-webhook.yml
+
+name: github-webhook
+description: GitHub webhook integration for automatic pipeline triggers
+type: webhook
+
+# Webhook configuration
+config:
+  method: POST
+  url: "{{.cds.api.url}}/webhook/{{.cds.project.key}}/github"
+  headers:
+    Content-Type: "application/json"
+    X-GitHub-Event: "{{.headers.x-github-event}}"
+  
+# Webhook triggers
+triggers:
+  - event: push
+    conditions:
+      - type: branch
+        value: ["main", "develop", "feature/*", "hotfix/*"]
+    workflow: "eks-deployment"
+    parameters:
+      environment: |
+        {% if git.branch == "main" %}production{% else %}staging{% endif %}
+      deploy_apps: true
+      run_tests: true
+      
+  - event: pull_request
+    conditions:
+      - type: action
+        value: ["opened", "synchronize", "reopened"]
+      - type: target_branch
+        value: ["main", "develop"]
+    workflow: "eks-deployment"
+    parameters:
+      environment: "staging"
+      deploy_apps: false
+      run_tests: true
+      terraform_action: "plan"
+      
+  - event: release
+    conditions:
+      - type: action
+        value: ["published"]
+    workflow: "eks-deployment"
+    parameters:
+      environment: "production"
+      deploy_apps: true
+      run_tests: true
+      terraform_action: "apply"
+
+# Webhook security
+security:
+  secret: "{{.cds.env.GITHUB_WEBHOOK_SECRET}}"
+  verify_ssl: true
+  allowed_ips:
+    - "140.82.112.0/20"  # GitHub webhook IPs
+    - "192.30.252.0/22"
+    - "185.199.108.0/22"
+
+---
+# .cds/hooks/slack-notifications.yml
+
+name: slack-notifications
+description: Slack notification integration for pipeline events
+type: webhook
+
+# Slack webhook configuration
+config:
+  url: "{{.cds.env.SLACK_WEBHOOK_URL}}"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+
+# Notification templates
+templates:
+  workflow_started: |
+    {
+      "attachments": [{
+        "color": "#36a64f",
+        "title": ":rocket: Pipeline Started",
+        "text": "EKS deployment pipeline has started",
+        "fields": [
+          {"title": "Project", "value": "{{.cds.project.name}}", "short": true},
+          {"title": "Workflow", "value": "{{.cds.workflow.name}}", "short": true},
+          {"title": "Branch", "value": "{{.git.branch}}", "short": true},
+          {"title": "Environment", "value": "{{.workflow.parameters.environment}}", "short": true},
+          {"title": "Triggered by", "value": "{{.cds.triggered_by.username}}", "short": true},
+          {"title": "Commit", "value": "{{.git.hash}}", "short": true}
+        ],
+        "footer": "OVH CDS",
+        "ts": {{.cds.timestamp}}
+      }]
+    }
+    
+  workflow_success: |
+    {
+      "attachments": [{
+        "color": "good",
+        "title": ":white_check_mark: Pipeline Completed Successfully",
+        "text": "EKS deployment pipeline completed successfully!",
+        "fields": [
+          {"title": "Project", "value": "{{.cds.project.name}}", "short": true},
+          {"title": "Workflow", "value": "{{.cds.workflow.name}}", "short": true},
+          {"title": "Branch", "value": "{{.git.branch}}", "short": true},
+          {"title": "Environment", "value": "{{.workflow.parameters.environment}}", "short": true},
+          {"title": "Duration", "value": "{{.cds.workflow.duration}}", "short": true},
+          {"title": "Commit", "value": "{{.git.hash}}", "short": true}
+        ],
+        "actions": [{
+          "type": "button",
+          "text": "View Pipeline",
+          "url": "{{.cds.ui.url}}/project/{{.cds.project.key}}/workflow/{{.cds.workflow.name}}/run/{{.cds.workflow.run.number}}"
+        }],
+        "footer": "OVH CDS",
+        "ts": {{.cds.timestamp}}
+      }]
+    }
+    
+  workflow_failure: |
+    {
+      "attachments": [{
+        "color": "danger",
+        "title": ":x: Pipeline Failed",
+        "text": "EKS deployment pipeline failed!",
+        "fields": [
+          {"title": "Project", "value": "{{.cds.project.name}}", "short": true},
+          {"title": "Workflow", "value": "{{.cds.workflow.name}}", "short": true},
+          {"title": "Branch", "value": "{{.git.branch}}", "short": true},
+          {"title": "Environment", "value": "{{.workflow.parameters.environment}}", "short": true},
+          {"title": "Failed Job", "value": "{{.cds.workflow.failed_job}}", "short": true},
+          {"title": "Error", "value": "{{.cds.workflow.error}}", "short": false}
+        ],
+        "actions": [{
+          "type": "button",
+          "text": "View Pipeline",
+          "url": "{{.cds.ui.url}}/project/{{.cds.project.key}}/workflow/{{.cds.workflow.name}}/run/{{.cds.workflow.run.number}}"
+        }],
+        "footer": "OVH CDS",
+        "ts": {{.cds.timestamp}}
+      }]
+    }
+
+# Trigger events for notifications
+triggers:
+  - event: workflow-started
+    template: workflow_started
+    conditions:
+      - type: workflow
+        value: ["eks-deployment"]
+        
+  - event: workflow-success
+    template: workflow_success
+    conditions:
+      - type: workflow
+        value: ["eks-deployment"]
+      - type: environment
+        value: ["production", "staging"]
+        
+  - event: workflow-failure
+    template: workflow_failure
+    conditions:
+      - type: workflow
+        value: ["eks-deployment"]
+
